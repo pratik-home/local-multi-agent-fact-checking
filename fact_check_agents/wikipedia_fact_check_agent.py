@@ -2,11 +2,8 @@ __author__ = "Dong Yihan"
 
 import requests
 import json
-# ただのwikipediaのライブラリが足りないので、wikipediaに関するライブラリ二つを導入する: wikipedia & wikipedia-sections
-import wikipedia
-import openai
-from keybert import KeyLLM
-from keybert.llm import OpenAI
+from keybert import KeyBERT
+from dependencies import wikipedia_client
 from .base_agent import BaseAgent
 
 
@@ -25,9 +22,7 @@ class WikipediaFactCheckAgent(BaseAgent):
                 Use the following format separated by commas:
                 <keywords>
                 """
-        client = openai.OpenAI(api_key=self.openai.openai_key)
-        self.llm = OpenAI(model="gpt-4o", prompt=self.keywords_extraction_instruction, chat=True, client=client)
-        self.keyword_model = KeyLLM(llm=self.llm)
+        self.keyword_model = KeyBERT(model=self.embedding_model)
 
         self.status.update(status=200, message="successfully initialize wikipedia agent")
         return
@@ -41,8 +36,13 @@ class WikipediaFactCheckAgent(BaseAgent):
         """
         self.status.update(status=500, message="error in keywords_extraction")
 
-        keywords_list = self.keyword_model.extract_keywords(docs=queries, check_vocab=True)
-        keywords = [" ".join(keyword) for keyword in keywords_list]
+        keywords_list = self.keyword_model.extract_keywords(
+            docs=queries,
+            keyphrase_ngram_range=(1, 2),
+            stop_words="english",
+            top_n=2
+        )
+        keywords = [self._format_keywords(keyword_candidates, query) for keyword_candidates, query in zip(keywords_list, queries)]
 
         self.status.update(status=200, message="successfully extract keywords from claims")
         return keywords
@@ -57,9 +57,9 @@ class WikipediaFactCheckAgent(BaseAgent):
 
         wiki_titles = []  # list[str]
 
-        wiki_keywords = self.keyword_model.extract_keywords(docs=queries)
+        wiki_keywords = self.keywords_extraction(queries=queries)
         for wiki_keyword in wiki_keywords:
-            wiki_pages = wikipedia.search(query=wiki_keyword)
+            wiki_pages = wikipedia_client.search_titles(query=wiki_keyword, limit=5)
             if wiki_pages:
                 wiki_title = wiki_pages[0]
             else:
@@ -68,6 +68,21 @@ class WikipediaFactCheckAgent(BaseAgent):
 
         self.status.update(status=200, message="successfully achieve titles of wikipedia related to queries")
         return wiki_titles  # list[str]
+
+    @staticmethod
+    def _format_keywords(keyword_candidates, fallback_query):
+        """
+        KeyBERT returns [(keyword, score), ...] for one document. Keep the
+        Wikipedia search query compact, and fall back to the original query
+        when no keywords are available.
+        """
+        keywords = []
+        for candidate in keyword_candidates:
+            if isinstance(candidate, tuple) and candidate:
+                keywords.append(candidate[0])
+            elif isinstance(candidate, str):
+                keywords.append(candidate)
+        return " ".join(keywords[:2]) if keywords else fallback_query
 
     def search_wikipedia_pages(self, title_list: list[str]):
         """
@@ -80,16 +95,9 @@ class WikipediaFactCheckAgent(BaseAgent):
         wiki_pages = []
         for title in title_list:
             if title:
-                try:
-                    wiki_page = wikipedia.page(title=title)
-                    wiki_summary = wiki_page.summary
-                    wiki_content = wiki_page.content  # ページの上に全ての内容
-                except wikipedia.exceptions.WikipediaException:
-                    wiki_summary = ""
-                    wiki_content = ""
+                wiki_summary = wikipedia_client.page_summary(title=title, sentences=5)
             else:
                 wiki_summary = ""
-                wiki_content = ""
             wiki_pages.append(wiki_summary)
 
         self.status.update(status=200, message="successfully achieve contents on wikipedia pages")
