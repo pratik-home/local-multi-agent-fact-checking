@@ -13,6 +13,12 @@ Ollama is installed locally at `/home/ccl/Pratik/llm-exp/ollama`. Add it to
 your shell and keep downloaded models in the same workspace:
 
 ```bash
+./scripts/start_ollama.sh
+```
+
+This is equivalent to:
+
+```bash
 export PATH=/home/ccl/Pratik/llm-exp/ollama/bin:$PATH
 export OLLAMA_MODELS=/home/ccl/Pratik/llm-exp/ollama/models
 ollama serve
@@ -52,8 +58,11 @@ You can use a different local OpenAI-compatible server by changing those variabl
 ## 4. Run the API
 
 ```bash
-python main.py
+./scripts/start_api.sh
 ```
+
+This activates the `mafc` Conda environment, sets the local LLM defaults, and
+runs `python main.py`.
 
 In another terminal:
 
