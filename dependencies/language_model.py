@@ -1,5 +1,6 @@
 __author__ = "Dong Yihan"
 
+import os
 import openai
 import tiktoken
 
@@ -15,12 +16,13 @@ class OPENAI:
             "message": "error in initialization of OPENAI"
         }
 
-        # openaiのapiを使う時にのkeyです
-        self.openai_key = ""
+        # Local OpenAI-compatible endpoint. Ollama exposes this at /v1.
+        self.openai_key = os.getenv("OPENAI_API_KEY", os.getenv("LOCAL_LLM_API_KEY", "ollama"))
+        self.base_url = os.getenv("OPENAI_BASE_URL", os.getenv("LOCAL_LLM_BASE_URL", "http://localhost:11434/v1"))
 
         # openaiの言語モデルについての設定
         self.gpt_config = {
-            'model_name': 'gpt-4o',
+            'model_name': os.getenv("OPENAI_MODEL", os.getenv("LOCAL_LLM_MODEL", "llama3.1:8b")),
             'temperature': 0.0,
             'top_p': 1,
             'frequency_penalty': 0.0,
@@ -29,7 +31,10 @@ class OPENAI:
         }
 
         # プロンプトの長さを測るため、tiktokenというライブラリーを使う
-        self.encoding = tiktoken.encoding_for_model(self.gpt_config["model_name"])
+        try:
+            self.encoding = tiktoken.encoding_for_model(self.gpt_config["model_name"])
+        except KeyError:
+            self.encoding = tiktoken.get_encoding("cl100k_base")
 
         self.status.update(status=200, message="successfully initialize class openai")
         return
@@ -44,8 +49,8 @@ class OPENAI:
         """
         self.status.update(status=500, message="error in get_gpt_response()")
 
-        openai.api_key = self.openai_key
-        response = openai.chat.completions.create(
+        client = openai.OpenAI(api_key=self.openai_key, base_url=self.base_url)
+        response = client.chat.completions.create(
             model=self.gpt_config["model_name"],
             messages=prompts,
             temperature=self.gpt_config["temperature"],
