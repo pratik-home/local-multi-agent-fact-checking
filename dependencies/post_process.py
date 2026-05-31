@@ -3,6 +3,7 @@ __author__ = "Dong Yihan"
 import json
 import ast
 import math
+import os
 import numpy as np
 from .language_model import OPENAI
 
@@ -520,6 +521,7 @@ class PostProcess:
             factuality_label_index = 1
         factuality_label_linear = factuality_labels[factuality_label_index]
 
+        os.makedirs(os.path.dirname(confidence_comparison_save_dir), exist_ok=True)
         with open(confidence_comparison_save_dir, mode="a", encoding="utf-8") as comparison_results:
             comparison_results.write(factuality_label + " " +
                                      factuality_label_square + " " +
@@ -597,6 +599,7 @@ class PostProcess:
         else:
             factuality_label_linear = "FALSE"
 
+        os.makedirs(os.path.dirname(confidence_comparison_save_dir), exist_ok=True)
         with open(confidence_comparison_save_dir, mode="a", encoding="utf-8") as comparison_results:
             comparison_results.write(factuality_label + " " +
                                      factuality_label_square + " " +

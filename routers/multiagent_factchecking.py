@@ -154,8 +154,7 @@ async def multi_agent_fact_checking(multi_agent_fact_check_payload: MultiAgentFa
         )
         print("MAFC Score:", post_and_confidence["confidence"])
 
-        # return JSONResponse(content=post_and_confidence["factuality"], status_code=200)
-        return JSONResponse(content="save comparison results", status_code=200) # for the ablation experiments
+        return JSONResponse(content=post_and_confidence["factuality"], status_code=200)
     except Exception as err:
 
         traceback.print_exc()
@@ -539,20 +538,27 @@ async def language_model_fact_checking(language_model_fact_checking_payload: Mul
             ERROR_STATUS = status
             return JSONResponse(content=ERROR_STATUS["message"], status_code=ERROR_STATUS["status"])
 
+        # 主張を問題の形に変換する
+        queries = post_process_functions.query_generation(claim_list=claims)
+        status = post_process_functions.status
+        if not check_status(status=status):
+            ERROR_STATUS = status
+            return JSONResponse(content=status["message"], status_code=status["status"])
+
         # エージェントを用いて事実検証を行う
-        verification_results_1 = llm_agent1.llm_agent_workflow(claim_list=claims)
+        verification_results_1 = llm_agent1.llm_agent_workflow(claim_list=claims, query_list=queries)
         status = llm_agent1.status
         if not check_status(status):
             ERROR_STATUS = status
             return JSONResponse(content=ERROR_STATUS["message"], status_code=ERROR_STATUS["status"])
 
-        verification_results_2 = llm_agent2.llm_agent_workflow(claim_list=claims)
+        verification_results_2 = llm_agent2.llm_agent_workflow(claim_list=claims, query_list=queries)
         status = llm_agent2.status
         if not check_status(status):
             ERROR_STATUS = status
             return JSONResponse(content=ERROR_STATUS["message"], status_code=ERROR_STATUS["status"])
 
-        verification_results_3 = llm_agent3.llm_agent_workflow(claim_list=claims)
+        verification_results_3 = llm_agent3.llm_agent_workflow(claim_list=claims, query_list=queries)
         status = llm_agent3.status
         if not check_status(status):
             ERROR_STATUS = status
@@ -674,8 +680,7 @@ async def multi_agent_fact_checking_binary(multi_agent_fact_check_binary_payload
         )
         print("MAFC Score:", post_and_confidence["confidence"])
 
-        # return JSONResponse(content=post_and_confidence["factuality"], status_code=200)
-        return JSONResponse(content="save comparison results", status_code=200)  # for the ablation experiments
+        return JSONResponse(content=post_and_confidence["factuality"], status_code=200)
     except Exception as err:
 
         traceback.print_exc()
@@ -764,7 +769,7 @@ async def multi_agent_fact_checking(multi_agent_fact_check_payload: MultiAgentFa
         # if not check_status(status):
         #     ERROR_STATUS = status
         #     return JSONResponse(content=status["message"], status_code=status["status"])
-        claims_and_results_llm = llm_agent.llm_agent_workflow(claim_list=claims)
+        claims_and_results_llm = llm_agent.llm_agent_workflow(claim_list=claims, query_list=queries)
         status = llm_agent.status
         if not check_status(status):
             ERROR_STATUS = status
@@ -787,4 +792,3 @@ async def multi_agent_fact_checking(multi_agent_fact_check_payload: MultiAgentFa
         traceback.print_exc()
 
         raise HTTPException(status_code=ERROR_STATUS["status"], detail=ERROR_STATUS["message"])
-

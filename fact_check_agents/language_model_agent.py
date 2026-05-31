@@ -121,7 +121,7 @@ class LanguageModelAgent(BaseAgent):
 
             print("language_model_answer:", llm_answer)
             claim_and_answer = {
-                "claim": claim,
+                "claim": claim["claim"],
                 "evidence": llm_answer
             }
             llm_claims_answers.append(claim_and_answer)
