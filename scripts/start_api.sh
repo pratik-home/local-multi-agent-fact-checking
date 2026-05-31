@@ -8,6 +8,7 @@ CONDA_ENV="${CONDA_ENV:-mafc}"
 export LOCAL_LLM_BASE_URL="${LOCAL_LLM_BASE_URL:-http://localhost:11434/v1}"
 export LOCAL_LLM_API_KEY="${LOCAL_LLM_API_KEY:-ollama}"
 export LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-llama3.1:8b}"
+export NYTIMES_API_KEY="${NYTIMES_API_KEY:-9Nttn2R4GfjRNlKnAtjBbRimD41XGZhG}"
 
 if [[ ! -f "${CONDA_HOME}/etc/profile.d/conda.sh" ]]; then
   echo "Conda activation script not found at ${CONDA_HOME}/etc/profile.d/conda.sh" >&2
