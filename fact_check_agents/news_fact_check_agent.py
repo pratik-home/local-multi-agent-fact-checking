@@ -1,14 +1,14 @@
 __author__ = "Dong Yihan"
 
+import os
 '''
 主張からキーワードを抽出し、newsapiを用いて検索する
 '''
 
-import openai
-from keybert.llm import OpenAI
-from keybert import KeyLLM
+from keybert import KeyBERT
 from pynytimes import NYTAPI
 
+from dependencies import wikipedia_client
 from .base_agent import BaseAgent
 
 
@@ -17,8 +17,8 @@ class NewsFactCheckAgent(BaseAgent):
     def __init__(self):
         super().__init__(agent_name="news_fact_check_agent", agent_weight=1.0)
 
-        self.news_api_key = "9Nttn2R4GfjRNlKnAtjBbRimD41XGZhG"  # NewYork Times api key
-        self.news_client = NYTAPI(key=self.news_api_key, parse_dates=True)
+        self.news_api_key = os.getenv("NYTIMES_API_KEY", "")
+        self.news_client = NYTAPI(key=self.news_api_key, parse_dates=True) if self.news_api_key else None
         self.keywords_extraction_instruction = """
         I have the following document:
         [DOCUMENT]
@@ -28,8 +28,7 @@ class NewsFactCheckAgent(BaseAgent):
         Use the following format separated by commas:
         <keywords>
         """
-        self.llm = OpenAI(model="gpt-3.5-turbo", prompt=self.keywords_extraction_instruction, chat=True)
-        self.keyword_model = KeyLLM(llm=self.llm)
+        self.keyword_model = KeyBERT(model=self.embedding_model)
 
         self.status.update(status=200, message="successfully initialize news agent")
         return
@@ -45,8 +44,13 @@ class NewsFactCheckAgent(BaseAgent):
 
         # list[dict]からlistに変形する
         claims = [claim["claim"] for claim in claim_list]
-        keywords_list = self.keyword_model.extract_keywords(docs=claims, check_vocab=True)
-        keywords = [" ".join(keyword) for keyword in keywords_list]
+        keywords_list = self.keyword_model.extract_keywords(
+            docs=claims,
+            keyphrase_ngram_range=(1, 2),
+            stop_words="english",
+            top_n=2
+        )
+        keywords = [self._format_keywords(keyword_candidates, claim) for keyword_candidates, claim in zip(keywords_list, claims)]
 
         self.status.update(status=200, message="successfully extract keywords from claims")
         return claims, keywords
@@ -71,13 +75,16 @@ class NewsFactCheckAgent(BaseAgent):
         # 抽出されたキーワードを用いて、ニュースを検索する。主張、検索されたニュースと信憑性を組み合わせて保存する。
         for i in range(0, len(keywords)):
 
-            # resultsはlist[dict{"abstract", "snippet"}]です
-            # 全てのまとめを抽出する
-            results = self.news_client.article_search(query=keywords[i], options={"sort": "relevance"}, results=5)
-            if results:
-                snippets = results[0]["snippet"]
+            if self.news_client:
+                # resultsはlist[dict{"abstract", "snippet"}]です
+                # 全てのまとめを抽出する
+                results = self.news_client.article_search(query=keywords[i], options={"sort": "relevance"}, results=5)
+                if results:
+                    snippets = results[0]["snippet"]
+                else:
+                    snippets = ""
             else:
-                snippets = ""
+                snippets = self.search_wikipedia_fallback(query=keywords[i])
 
             # 主張と検索されたニュースのBERTScoreを計算する
             # bert_score_f1 = self.calculate_bert_score(claim=claims[i], evidence=snippets)
@@ -91,6 +98,24 @@ class NewsFactCheckAgent(BaseAgent):
 
         self.status.update(status=200, message="successfully search news")
         return claims_and_news
+
+    @staticmethod
+    def _format_keywords(keyword_candidates, fallback_claim):
+        keywords = []
+        for candidate in keyword_candidates:
+            if isinstance(candidate, tuple) and candidate:
+                keywords.append(candidate[0])
+            elif isinstance(candidate, str):
+                keywords.append(candidate)
+        return " ".join(keywords[:2]) if keywords else fallback_claim
+
+    @staticmethod
+    def search_wikipedia_fallback(query: str):
+        for title in wikipedia_client.search_titles(query=query, limit=3):
+            summary = wikipedia_client.page_summary(title=title, sentences=2)
+            if summary:
+                return summary
+        return ""
 
     def claims_verification(self, claims_and_news=None, relevance_list=None):
         """
