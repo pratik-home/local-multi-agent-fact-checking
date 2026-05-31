@@ -1,7 +1,10 @@
 __author__ = "Dong Yihan"
 
+import os
 import requests
 import json
+from bs4 import BeautifulSoup
+from urllib.parse import parse_qs, urlparse
 from .base_agent import BaseAgent
 
 
@@ -11,10 +14,10 @@ class GoogleSearchFactCheckAgent(BaseAgent):
     """
 
     def __init__(self):
-        super().__init__(agent_name="google_search_fact_check_agent", agent_weight=1.0)
+        super().__init__(agent_name="web_search_fact_check_agent", agent_weight=1.0)
 
-        # google search api
-        self.serper_key = ""
+        # Optional Serper key. Without it, this agent falls back to DuckDuckGo.
+        self.serper_key = os.getenv("SERPER_API_KEY", "")
 
         self.status.update(status=200, message="successfully initialize google search agent")
         return
@@ -26,6 +29,11 @@ class GoogleSearchFactCheckAgent(BaseAgent):
         :return: Googleで検索した結果　list[dict]
         """
         self.status.update(status=500, message="error in get_google_responses")
+
+        if not self.serper_key:
+            google_response = [self.get_duckduckgo_fallback_response(query=query) for query in queries]
+            self.status.update(status=200, message="successfully get responses from duckduckgo fallback")
+            return google_response
 
         google_search_url = "https://google.serper.dev/search"
         queries_dict_list = []
@@ -46,6 +54,63 @@ class GoogleSearchFactCheckAgent(BaseAgent):
 
         self.status.update(status=200, message="successfully get responses from google")
         return google_response
+
+    @staticmethod
+    def get_duckduckgo_fallback_response(query: str):
+        """
+        Serper-free web-search fallback that returns a Serper-like response
+        shape so the existing parser can keep working without a paid search API.
+        """
+        organic_results = []
+        try:
+            response = requests.get(
+                "https://html.duckduckgo.com/html/",
+                params={"q": query},
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=15
+            )
+            response.raise_for_status()
+        except requests.RequestException as err:
+            print("DuckDuckGo search failed:", err)
+            response = None
+
+        if response is not None:
+            soup = BeautifulSoup(response.text, "html.parser")
+            for result in soup.select(".result"):
+                title_link = result.select_one(".result__a")
+                snippet = result.select_one(".result__snippet")
+                if not title_link:
+                    continue
+
+                title = title_link.get_text(" ", strip=True)
+                link = GoogleSearchFactCheckAgent._normalize_duckduckgo_url(
+                    title_link.get("href", "None")
+                )
+                snippet_text = snippet.get_text(" ", strip=True) if snippet else title
+                organic_results.append({
+                    "title": title,
+                    "snippet": snippet_text,
+                    "link": link
+                })
+                if len(organic_results) >= 5:
+                    break
+
+        if not organic_results:
+            organic_results.append({
+                "title": "No DuckDuckGo result",
+                "snippet": "No good DuckDuckGo fallback result was found",
+                "link": "None"
+            })
+
+        return {"organic": organic_results}
+
+    @staticmethod
+    def _normalize_duckduckgo_url(url: str):
+        parsed = urlparse(url)
+        redirect_target = parse_qs(parsed.query).get("uddg")
+        if redirect_target:
+            return redirect_target[0]
+        return url
 
     @staticmethod
     def parse_search_results(google_search_results):
@@ -132,8 +197,8 @@ class GoogleSearchFactCheckAgent(BaseAgent):
                     "evidence": filtered_result
                 }
                 claims_and_searching_results.append(claim_and_searching_result)
-                print("google_evidence:\n", filtered_result)
-                self.status.update(status=200, message="successfully get claims and searching results of google")
+                print("web_search_evidence:\n", filtered_result)
+                self.status.update(status=200, message="successfully get claims and searching results of web search")
 
         return claims_and_searching_results
 
@@ -179,7 +244,7 @@ class GoogleSearchFactCheckAgent(BaseAgent):
 
             # 返信の中のnullを削除する
             verification_result = verification_result.replace("null", "None")
-            print("google_verification_result:", verification_result)
+            print("web_search_verification_result:", verification_result)
             result_dict = eval(verification_result)
             result_dict["confidence"] = float(result_dict["confidence"])
 
